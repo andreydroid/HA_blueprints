@@ -117,6 +117,19 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
    notify device/group + Base URL, turn **Enable VLM Alerts** on, paste that camera's `vlm_rules`,
    and leave **Suppress Baseline Notifications** off until you trust the rules.
 
+> **Attachment for VLM alerts — use an _event_-keyed image.** VLM alerts are
+> object-level events, so they have an object/event id but **no review id**. Choose an
+> **event/object-keyed** attachment (e.g. *Event GIF* / *Object Event GIF*, snapshot)
+> rather than *Review GIF* — `review_preview.gif` is keyed by review id and will 404 on
+> VLM alerts. The VLM branch honors whatever you select in **Initial Attachment**; this is
+> just about picking an option that can resolve for object-level events.
+
+> **Acknowledge button needs phone→HA reachability.** Receiving a push works over the
+> cloud, but **tapping an action button POSTs an event back to HA**. If the phone can't
+> reach your HA URL at tap time (e.g. VPN/Tailscale disconnected), the action silently
+> fails (Android later shows an "unable to send" toast) and the siren won't stop. Ensure
+> the companion app's URL is reachable (VPN connected, or a reachable external URL).
+
 ## VLM Rules: inline vs file-backed (your choice — no blueprint change)
 
 The blueprint's **VLM Rules** input is a template field. Two ways to supply rules:
