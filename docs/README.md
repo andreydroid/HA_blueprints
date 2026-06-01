@@ -11,14 +11,14 @@ notification system.
    |  frigate/tracked_object_update   {type:"description", id, description:"```json…```"}
    |     (async, ~seconds after event end, FENCED JSON, NO camera)
    v
-PREPROCESSOR  (frigate_vlm_preprocessor.yaml — this folder)
+PREPROCESSOR  (packages/frigate-vlm.yaml)
    - strip ```json fences  -> parse
    - DROP if not valid / not structured (no confidence+image_quality)
    - resolve id -> camera/label/zones via Frigate API /api/events/<id>
    - coerce types ("false"->false, "3"->3)   <-- prevents string-truthiness bugs
    |  frigate_vlm/events/<camera>   (clean contract, below)
    v
-BLUEPRINT  (Stable_VLM.yaml — one automation per camera)
+BLUEPRINT  (Stable-VLM.yaml — one automation per camera)
    - trigger on frigate_vlm/events/<camera>
    - gate on confidence/image_quality thresholds
    - evaluate per-camera vlm_rules template -> {notify, priority, message}
@@ -83,11 +83,15 @@ pipeline. Below is the **illustrative** field set used by the example rules; ada
 
 ## Files
 
-| File | Goes to | Purpose |
+The repo mirrors your HA `/config` layout — each file copies to the matching `/config` path.
+
+| Repo file | Goes to | Purpose |
 |---|---|---|
-| `frigate-vlm.jinja` | `/config/custom_templates/frigate-vlm.jinja` | macros: `parse_description`, `safe_get`, `vlm_clean_json` |
-| `frigate_vlm_preprocessor.yaml` | `/config/packages/frigate_vlm.yaml` | `rest_command` + preprocessor automation |
-| `../Frigate_Camera_Notifications/Stable_VLM.yaml` | `/config/blueprints/automation/frigate_vlm/Stable_VLM.yaml` | the notification blueprint with the VLM branch |
+| `custom_templates/frigate-vlm.jinja` | `/config/custom_templates/frigate-vlm.jinja` | macros: `parse_description`, `safe_get`, `vlm_clean_json` |
+| `custom_templates/frigate-vlm-rules.jinja` *(your private copy — gitignored; start from `examples/`)* | `/config/custom_templates/frigate-vlm-rules.jinja` | your per-camera rule macros |
+| `packages/frigate-vlm.yaml` | `/config/packages/frigate-vlm.yaml` | `rest_command` + preprocessor + siren-escalation automations |
+| `blueprints/automation/frigate-vlm/Stable-VLM.yaml` | `/config/blueprints/automation/frigate-vlm/Stable-VLM.yaml` | the notification blueprint with the VLM branch |
+| `examples/frigate-vlm-rules.example.jinja` | *(template — copy & adapt to the path above)* | anonymized starter rules |
 
 ## Install (step-by-step)
 
@@ -98,15 +102,15 @@ pipeline. Below is the **illustrative** field set used by the example rules; ada
    homeassistant:
      packages: !include_dir_named packages
    ```
-3. **Preprocessor** — copy `frigate_vlm_preprocessor.yaml` to `/config/packages/frigate_vlm.yaml`.
+3. **Preprocessor** — copy `packages/frigate-vlm.yaml` to `/config/packages/frigate-vlm.yaml`.
    **Edit the `rest_command.frigate_get_event` URL** inside it: replace `<FRIGATE_HOST>`
    with your Frigate host/IP (the unauthenticated internal API, usually port 5000) —
    e.g. `http://192.168.x.x:5000`. This is a package config value, not a blueprint input,
    so it must be set here.
 4. **Restart Home Assistant** (packages + custom templates need a restart, not just a reload).
 5. **Verify the preprocessor** — see "Test the preprocessor" below.
-6. **Blueprint** — copy `Stable_VLM.yaml` to
-   `/config/blueprints/automation/frigate_vlm/Stable_VLM.yaml` (HA auto-detects it under
+6. **Blueprint** — copy `Stable-VLM.yaml` to
+   `/config/blueprints/automation/frigate-vlm/Stable-VLM.yaml` (HA auto-detects it under
    Settings → Automations → Blueprints), or import by URL once the fork is pushed.
 7. **One automation per camera** — create from the blueprint: pick the camera, set your usual
    notify device/group + Base URL, turn **Enable VLM Alerts** on, paste that camera's `vlm_rules`,
@@ -144,7 +148,7 @@ caller variables, so the scope (`vlm, gate, vlm_zones, camera_name`) is passed e
 
 - [x] Schema v1 standardized across camera prompts
 - [x] Preprocessor (this folder)
-- [x] Blueprint VLM branch — `Frigate_Camera_Notifications/Stable_VLM.yaml` (tailored)
+- [x] Blueprint VLM branch — `blueprints/automation/frigate-vlm/Stable-VLM.yaml` (tailored)
 - [x] Example rules (pool, gate, suspicious, delivery, package theft, balcony, family) — authored as per-camera macros; anonymized template in `examples/frigate-vlm-rules.example.jinja` (real deployment file is gitignored)
 - [x] Per-camera baseline-suppression toggle (`vlm_suppress_baseline`)
 - [ ] Production soak (~1 week), then generalize + upstream PR to SgtBatten/HA_blueprints
