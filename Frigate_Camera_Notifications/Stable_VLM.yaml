@@ -782,6 +782,8 @@ blueprint:
           selector:
             select:
               options:
+                - label: Acknowledge (stop siren / dismiss)
+                  value: ack-{{ id }}
                 - label: View Clip
                   value: "{{base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{camera}}/clip.mp4"
                 - label: View Clip (IOS)
@@ -820,6 +822,8 @@ blueprint:
           selector:
             select:
               options:
+                - label: Acknowledge (stop siren / dismiss)
+                  value: ack-{{ id }}
                 - label: View Clip
                   value: "{{base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{camera}}/clip.mp4"
                 - label: View Clip (IOS)
@@ -850,7 +854,7 @@ blueprint:
         button_3:
           name: Action Button 3 Text
           description: "The text used on the third Action button at the bottom of the notification. Set the URL below."
-          default: "Silence New Notifications"
+          default: "Silence this camera"
         url_3:
           name: Action Button 3 URL
           description: Customise what happens when you press the third Action Button. Select from one of the preconfigured options or enter your own custom URL.
@@ -858,7 +862,9 @@ blueprint:
           selector:
             select:
               options:
-                - label: Silence New Notifications
+                - label: Acknowledge (stop siren / dismiss)
+                  value: ack-{{ id }}
+                - label: Silence this camera
                   value: silence-{{ this.entity_id }}
                 - label: View Clip
                   value: "{{base_url}}/api/frigate{{client_id}}/notifications/{{id}}/{{camera}}/clip.mp4"
