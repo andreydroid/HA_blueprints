@@ -12,8 +12,8 @@
 #   frigate_vlm/events/<camera>     (clean contract, see README)
 #
 # INSTALL  (full step-by-step in docs/README.md)
-#   1) Install custom_templates/frigate-vlm.jinja to
-#      /config/custom_templates/frigate-vlm.jinja  (provides parse_description + vlm_clean_json)
+#   1) Install custom_templates/frigate_vlm.jinja to
+#      /config/custom_templates/frigate_vlm.jinja  (provides parse_description + vlm_clean_json)
 #   2) Ensure packages are enabled in configuration.yaml:
 #        homeassistant:
 #          packages: !include_dir_named packages
@@ -58,7 +58,7 @@ automation:
       - variables:
           event_id: "{{ trigger.payload_json.id }}"
           vlm: >-
-            {% from 'frigate-vlm.jinja' import parse_description %}{{
+            {% from 'frigate_vlm.jinja' import parse_description %}{{
               parse_description(trigger.payload_json.description) | from_json(default={})
             }}
 
@@ -93,7 +93,7 @@ automation:
           qos: 0
           retain: false
           payload: >-
-            {% from 'frigate-vlm.jinja' import vlm_clean_json %}{{
+            {% from 'frigate_vlm.jinja' import vlm_clean_json %}{{
               '{'
               ~ '"id": ' ~ (event_id | tojson)
               ~ ', "camera": ' ~ (camera | tojson)
@@ -103,7 +103,7 @@ automation:
               ~ ', "score": ' ~ (score | tojson)
               ~ ', "schema_version": ' ~ ((vlm.schema_version | default(0)) | int | tojson)
               ~ ', "vlm": '
-            }}{% from 'frigate-vlm.jinja' import vlm_clean_json %}{{ vlm_clean_json(vlm) }}}
+            }}{% from 'frigate_vlm.jinja' import vlm_clean_json %}{{ vlm_clean_json(vlm) }}}
   # ===========================================================================
   # Siren escalation
   # ===========================================================================

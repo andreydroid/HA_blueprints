@@ -18,7 +18,7 @@ PREPROCESSOR  (packages/frigate_vlm.yaml)
    - coerce types ("false"->false, "3"->3)   <-- prevents string-truthiness bugs
    |  frigate_vlm/events/<camera>   (clean contract, below)
    v
-BLUEPRINT  (Stable-VLM.yaml — one automation per camera)
+BLUEPRINT  (Stable_VLM.yaml — one automation per camera)
    - trigger on frigate_vlm/events/<camera>
    - gate on confidence/image_quality thresholds
    - evaluate per-camera vlm_rules template -> {notify, priority, message}
@@ -87,16 +87,16 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
 
 | Repo file | Goes to | Purpose |
 |---|---|---|
-| `custom_templates/frigate-vlm.jinja` | `/config/custom_templates/frigate-vlm.jinja` | macros: `parse_description`, `safe_get`, `vlm_clean_json` |
-| `custom_templates/frigate-vlm-rules.jinja` *(your private copy — gitignored; start from `examples/`)* | `/config/custom_templates/frigate-vlm-rules.jinja` | your per-camera rule macros |
+| `custom_templates/frigate_vlm.jinja` | `/config/custom_templates/frigate_vlm.jinja` | macros: `parse_description`, `safe_get`, `vlm_clean_json` |
+| `custom_templates/frigate_vlm_rules.jinja` *(your private copy — gitignored; start from `examples/`)* | `/config/custom_templates/frigate_vlm_rules.jinja` | your per-camera rule macros |
 | `packages/frigate_vlm.yaml` | `/config/packages/frigate_vlm.yaml` | `rest_command` + preprocessor + siren-escalation automations |
-| `blueprints/automation/frigate-vlm/Stable-VLM.yaml` | `/config/blueprints/automation/frigate-vlm/Stable-VLM.yaml` | the notification blueprint with the VLM branch |
-| `examples/frigate-vlm-rules.example.jinja` | *(template — copy & adapt to the path above)* | anonymized starter rules |
-| `examples/frigate-config.example.yaml` | *(reference — lives on the **Frigate** host, not HA)* | Frigate-side setup: Coral TPU + GenAI provider + per-camera prompt/zones |
+| `blueprints/automation/frigate_vlm/Stable_VLM.yaml` | `/config/blueprints/automation/frigate_vlm/Stable_VLM.yaml` | the notification blueprint with the VLM branch |
+| `examples/frigate_vlm_rules.example.jinja` | *(template — copy & adapt to the path above)* | anonymized starter rules |
+| `examples/frigate_config.example.yaml` | *(reference — lives on the **Frigate** host, not HA)* | Frigate-side setup: Coral TPU + GenAI provider + per-camera prompt/zones |
 
 ## Install (step-by-step)
 
-1. **Custom template** — copy `frigate-vlm.jinja` to `/config/custom_templates/frigate-vlm.jinja`
+1. **Custom template** — copy `frigate_vlm.jinja` to `/config/custom_templates/frigate_vlm.jinja`
    (create the folder if needed). Custom templates are only re-read on a **full restart**.
 2. **Enable packages** — in `configuration.yaml`:
    ```yaml
@@ -110,8 +110,8 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
    so it must be set here.
 4. **Restart Home Assistant** (packages + custom templates need a restart, not just a reload).
 5. **Verify the preprocessor** — see "Test the preprocessor" below.
-6. **Blueprint** — copy `Stable-VLM.yaml` to
-   `/config/blueprints/automation/frigate-vlm/Stable-VLM.yaml` (HA auto-detects it under
+6. **Blueprint** — copy `Stable_VLM.yaml` to
+   `/config/blueprints/automation/frigate_vlm/Stable_VLM.yaml` (HA auto-detects it under
    Settings → Automations → Blueprints), or import by URL once the fork is pushed.
 7. **One automation per camera** — create from the blueprint: pick the camera, set your usual
    notify device/group + Base URL, turn **Enable VLM Alerts** on, paste that camera's `vlm_rules`,
@@ -124,12 +124,12 @@ The blueprint's **VLM Rules** input is a template field. Two ways to supply rule
 **Option 1 — Inline.** Paste the full `{% if ... %}` template directly into the input.
 Self-contained; edit in the automation UI.
 
-**Option 2 — File-backed.** Keep rules in `custom_templates/frigate-vlm-rules.jinja`
+**Option 2 — File-backed.** Keep rules in `custom_templates/frigate_vlm_rules.jinja`
 as a per-camera macro, and set the input to a one-liner:
 ```jinja
-{% from 'frigate-vlm-rules.jinja' import my_camera_rules %}{{ my_camera_rules(vlm, gate, vlm_zones, camera_name) }}
+{% from 'frigate_vlm_rules.jinja' import my_camera_rules %}{{ my_camera_rules(vlm, gate, vlm_zones, camera_name) }}
 ```
-(See `examples/frigate-vlm-rules.example.jinja` for an anonymized starting point.)
+(See `examples/frigate_vlm_rules.example.jinja` for an anonymized starting point.)
 Pros: rules live in version control next to the other macros, shared helpers, no UI
 editing. Con: editing the file requires a **full HA restart** (custom_templates are
 only re-read on restart), whereas inline edits apply on automation save.
@@ -149,8 +149,8 @@ caller variables, so the scope (`vlm, gate, vlm_zones, camera_name`) is passed e
 
 - [x] Schema v1 standardized across camera prompts
 - [x] Preprocessor (this folder)
-- [x] Blueprint VLM branch — `blueprints/automation/frigate-vlm/Stable-VLM.yaml` (tailored)
-- [x] Example rules (pool, gate, suspicious, delivery, package theft, balcony, family) — authored as per-camera macros; anonymized template in `examples/frigate-vlm-rules.example.jinja` (real deployment file is gitignored)
+- [x] Blueprint VLM branch — `blueprints/automation/frigate_vlm/Stable_VLM.yaml` (tailored)
+- [x] Example rules (pool, gate, suspicious, delivery, package theft, balcony, family) — authored as per-camera macros; anonymized template in `examples/frigate_vlm_rules.example.jinja` (real deployment file is gitignored)
 - [x] Per-camera baseline-suppression toggle (`vlm_suppress_baseline`)
 - [ ] Production soak (~1 week), then generalize + upstream PR to SgtBatten/HA_blueprints
 

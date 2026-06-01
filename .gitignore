@@ -1,7 +1,7 @@
 # --- Private, deployment-specific files (never commit) ---
 # Real per-camera VLM rules: contain real camera names, zones, family identities.
 # A sanitized template for the community lives at examples/ (committed).
-custom_templates/frigate-vlm-rules.jinja
+custom_templates/frigate_vlm_rules.jinja
 
 # Any local/private variants
 **/*.local.*

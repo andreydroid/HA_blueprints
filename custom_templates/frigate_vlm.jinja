@@ -1,6 +1,6 @@
 {#
   Full custom template for Frigate VLM alerting.
-  Install at: /config/custom_templates/frigate-vlm.jinja
+  Install at: /config/custom_templates/frigate_vlm.jinja
   (replaces your existing file; it keeps your tested macros and adds vlm_clean_json)
 #}
 
@@ -8,7 +8,7 @@
   Parse a Frigate GenAI description that may or may not be wrapped in markdown code fences.
   Returns the cleaned JSON string. Use with | from_json filter to get a dict.
   Example usage in automation:
-    {% from 'frigate-vlm.jinja' import parse_description %}
+    {% from 'frigate_vlm.jinja' import parse_description %}
     {% set desc = parse_description(trigger.payload_json.description) | from_json %}
 #}
 {% macro parse_description(raw) %}
@@ -45,7 +45,7 @@
   downstream rules can trust real types.
 
   Example:
-    {% from 'frigate-vlm.jinja' import vlm_clean_json %}
+    {% from 'frigate_vlm.jinja' import vlm_clean_json %}
     {{ vlm_clean_json(parsed_dict) }}
 #}
 {% macro vlm_clean_json(d) %}

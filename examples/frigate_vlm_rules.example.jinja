@@ -3,9 +3,9 @@
   EXAMPLE VLM rule macros  (anonymized template — copy & adapt)
   ============================================================================
   Install your own edited copy at:
-      /config/custom_templates/frigate-vlm-rules.jinja
+      /config/custom_templates/frigate_vlm_rules.jinja
   Then point a camera automation's "VLM Rules" input at one macro:
-      {% from 'frigate-vlm-rules.jinja' import perimeter_camera_rules %}{{ perimeter_camera_rules(vlm, gate, vlm_zones, camera_name) }}
+      {% from 'frigate_vlm_rules.jinja' import perimeter_camera_rules %}{{ perimeter_camera_rules(vlm, gate, vlm_zones, camera_name) }}
 
   ----------------------------------------------------------------------------
   CONTRACT — every macro receives:
