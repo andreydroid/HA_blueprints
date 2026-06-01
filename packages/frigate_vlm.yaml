@@ -17,7 +17,7 @@
 #   2) Ensure packages are enabled in configuration.yaml:
 #        homeassistant:
 #          packages: !include_dir_named packages
-#   3) Copy this file to /config/packages/frigate-vlm.yaml
+#   3) Copy this file to /config/packages/frigate_vlm.yaml
 #   4) Restart HA (or reload YAML + restart, packages need a restart)
 #
 #   Not using packages? Put the `rest_command:` block in configuration.yaml

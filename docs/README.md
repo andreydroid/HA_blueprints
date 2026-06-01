@@ -11,7 +11,7 @@ notification system.
    |  frigate/tracked_object_update   {type:"description", id, description:"```json…```"}
    |     (async, ~seconds after event end, FENCED JSON, NO camera)
    v
-PREPROCESSOR  (packages/frigate-vlm.yaml)
+PREPROCESSOR  (packages/frigate_vlm.yaml)
    - strip ```json fences  -> parse
    - DROP if not valid / not structured (no confidence+image_quality)
    - resolve id -> camera/label/zones via Frigate API /api/events/<id>
@@ -89,7 +89,7 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
 |---|---|---|
 | `custom_templates/frigate-vlm.jinja` | `/config/custom_templates/frigate-vlm.jinja` | macros: `parse_description`, `safe_get`, `vlm_clean_json` |
 | `custom_templates/frigate-vlm-rules.jinja` *(your private copy — gitignored; start from `examples/`)* | `/config/custom_templates/frigate-vlm-rules.jinja` | your per-camera rule macros |
-| `packages/frigate-vlm.yaml` | `/config/packages/frigate-vlm.yaml` | `rest_command` + preprocessor + siren-escalation automations |
+| `packages/frigate_vlm.yaml` | `/config/packages/frigate_vlm.yaml` | `rest_command` + preprocessor + siren-escalation automations |
 | `blueprints/automation/frigate-vlm/Stable-VLM.yaml` | `/config/blueprints/automation/frigate-vlm/Stable-VLM.yaml` | the notification blueprint with the VLM branch |
 | `examples/frigate-vlm-rules.example.jinja` | *(template — copy & adapt to the path above)* | anonymized starter rules |
 | `examples/frigate-config.example.yaml` | *(reference — lives on the **Frigate** host, not HA)* | Frigate-side setup: Coral TPU + GenAI provider + per-camera prompt/zones |
@@ -103,7 +103,7 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
    homeassistant:
      packages: !include_dir_named packages
    ```
-3. **Preprocessor** — copy `packages/frigate-vlm.yaml` to `/config/packages/frigate-vlm.yaml`.
+3. **Preprocessor** — copy `packages/frigate_vlm.yaml` to `/config/packages/frigate_vlm.yaml`.
    **Edit the `rest_command.frigate_get_event` URL** inside it: replace `<FRIGATE_HOST>`
    with your Frigate host/IP (the unauthenticated internal API, usually port 5000) —
    e.g. `http://192.168.x.x:5000`. This is a package config value, not a blueprint input,
