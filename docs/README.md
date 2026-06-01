@@ -92,6 +92,7 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
 | `packages/frigate-vlm.yaml` | `/config/packages/frigate-vlm.yaml` | `rest_command` + preprocessor + siren-escalation automations |
 | `blueprints/automation/frigate-vlm/Stable-VLM.yaml` | `/config/blueprints/automation/frigate-vlm/Stable-VLM.yaml` | the notification blueprint with the VLM branch |
 | `examples/frigate-vlm-rules.example.jinja` | *(template — copy & adapt to the path above)* | anonymized starter rules |
+| `examples/frigate-config.example.yaml` | *(reference — lives on the **Frigate** host, not HA)* | Frigate-side setup: Coral TPU + GenAI provider + per-camera prompt/zones |
 
 ## Install (step-by-step)
 

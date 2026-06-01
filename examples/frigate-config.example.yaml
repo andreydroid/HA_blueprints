@@ -1,0 +1,160 @@
+# =============================================================================
+# EXAMPLE Frigate config snippet — GenAI object descriptions + Coral TPU
+# =============================================================================
+# This lives on the FRIGATE host (its config.yaml), NOT in Home Assistant.
+# It shows the Frigate-side setup the VLM alerting pipeline depends on:
+#   - a detector (Coral USB TPU here)
+#   - GenAI provider + per-camera object-description prompts
+#   - the JSON schema your prompt should emit (drives the HA rules)
+#   - zone / required_zones alignment so descriptions actually generate
+#
+# Written for Frigate 0.15.x config shape. For 0.17+, the per-camera genai.*
+# keys move under genai.objects.* — see docs/UPGRADE_FRIGATE_0.17.md.
+#
+# Replace every <placeholder>, zone name, and identity detail with your own.
+# =============================================================================
+
+mqtt:
+  enabled: true
+  host: <MQTT_BROKER_HOST>        # e.g. core-mosquitto for the HA add-on
+  user: <MQTT_USER>
+  password: <MQTT_PASSWORD>
+
+# --- Detector: Google Coral USB Edge TPU -------------------------------------
+detectors:
+  coral:
+    type: edgetpu
+    device: usb
+
+# --- Semantic Search is a prerequisite for GenAI -----------------------------
+semantic_search:
+  enabled: true
+
+# --- GenAI provider (global). Per-camera prompts are defined under each camera.
+# On 0.17+, only the PROVIDER stays global; the rest moves under camera genai.objects.
+genai:
+  enabled: true
+  provider: gemini
+  api_key: <GEMINI_API_KEY>
+  model: gemini-2.5-flash
+
+# Global object tracking defaults (narrow per-camera below).
+objects:
+  track:
+    - person
+    - car
+    - dog
+    - cat
+
+cameras:
+
+  # ===========================================================================
+  # EXAMPLE: a hazard-area camera (e.g. pool / restricted zone) with GenAI
+  # ===========================================================================
+  example_camera:
+    ffmpeg:
+      # Using go2rtc restream is recommended; point detect at the substream.
+      inputs:
+        - path: rtsp://127.0.0.1:8554/example_camera          # main / high-res
+          input_args: preset-rtsp-restream
+          roles: [record]
+        - path: rtsp://127.0.0.1:8554/example_camera_sub      # substream
+          input_args: preset-rtsp-restream
+          roles: [detect]
+
+    detect:
+      enabled: true
+      width: 640        # match your substream resolution
+      height: 360
+      fps: 7
+
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          # Lower these ONLY if you must reliably detect small/distant subjects
+          # (e.g. a small child far from the camera). Trade-off: more false
+          # positives. Defaults are min_score 0.5 / threshold 0.7.
+          min_score: 0.4
+          threshold: 0.6
+
+    # Which review items become ALERTS (vs detections). The notification
+    # baseline only alerts on these zones — keep this list correct or events
+    # silently downgrade to detections and you get no baseline alert.
+    review:
+      alerts:
+        labels: [person]
+        required_zones:
+          - <zone_a>
+          - <zone_b>
+
+    zones:
+      <zone_a>:
+        coordinates: 0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9    # draw in the Frigate UI
+      <zone_b>:
+        coordinates: 0.3,0.3,0.7,0.3,0.7,0.7,0.3,0.7
+
+    # --- GenAI object descriptions for THIS camera ---------------------------
+    genai:
+      enabled: true
+      use_snapshot: true            # describe the best snapshot, not the thumbnail
+      objects:
+        - person                    # only run GenAI on these labels
+      required_zones:               # only describe objects that entered these
+        - <zone_a>                  # IMPORTANT: must cover everywhere you want a
+        - <zone_b>                  # description — objects outside these zones
+                                    # generate NO description (and no VLM alert).
+      # ---------------------------------------------------------------------
+      # PROMPT — emits the structured JSON the HA rules consume.
+      #
+      # ⚠️ GOTCHA: Frigate runs this prompt through Python str.format(), so
+      #    EVERY literal brace must be DOUBLED ({{ }} -> { }). This applies to
+      #    the JSON braces AND any '{' / '}' you write in prose. A single brace
+      #    anywhere throws KeyError and silently disables GenAI for the camera.
+      #
+      # ⚠️ The "no markdown fences" instruction does NOT reliably work — Gemini
+      #    often wraps output in ```json anyway. The HA preprocessor strips
+      #    fences regardless, so don't rely on the model obeying it.
+      #
+      # Keep `confidence` and `image_quality` IDENTICAL across all cameras —
+      # they drive the HA quality gate. `schema_version` lets you evolve safely.
+      # ---------------------------------------------------------------------
+      prompt: |
+        Describe what is happening in this image for a home-security system.
+
+        Known household members (adapt to your own):
+        - <person_1>: adult, <brief description>
+        - <person_2>: child, <brief description>
+
+        Respond with ONLY a JSON object (no extra text). Use these exact keys:
+        {{
+          "schema_version": 1,
+          "person_count": <integer total people visible>,
+          "adults_count": <integer>,
+          "children_count": <integer, age ~12 and under>,
+          "known_person_in_frame": <true|false>,
+          "unknown_person_in_frame": <true|false>,
+          "child_in_water": <true|false>,
+          "child_near_pool_edge": <true|false>,
+          "child_supervised": <true if an adult is within ~5m of any child>,
+          "suspicious_behavior": <true|false>,
+          "suspicious_behavior_details": "<short text or null>",
+          "confidence": "<low|medium|high>",
+          "image_quality": "<poor|fair|good>",
+          "summary": "<one sentence describing the action>"
+        }}
+
+  # ===========================================================================
+  # A camera WITHOUT GenAI (indoor / privacy) — detection only.
+  # ===========================================================================
+  indoor_camera:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/indoor_camera
+          input_args: preset-rtsp-restream
+          roles: [record, detect]
+    objects:
+      track: [person]
+    genai:
+      enabled: false
