@@ -162,18 +162,19 @@ automation:
                 prev_t: "{{ (steps[repeat.index - 2][0] | float) if repeat.index > 1 else 0 }}"
                 wait_gap: "{{ [step_t - prev_t, 0] | max }}"
             - alias: "Wait for ack (timeout = gap to this burst)"
+              # Match ANY notification-action event, then filter by action in the
+              # trigger condition. Templated event_data filters in wait_for_trigger
+              # do not bind runtime vars reliably, so we check action here instead.
               wait_for_trigger:
                 - trigger: event
                   event_type: mobile_app_notification_action
-                  event_data:
-                    action: "{{ ack_action }}"
               timeout:
                 seconds: "{{ wait_gap }}"
               continue_on_timeout: true
             - alias: "Acknowledged -> clear notification and stop"
               if:
                 - condition: template
-                  value_template: "{{ wait.trigger is not none }}"
+                  value_template: "{{ wait.trigger is not none and wait.trigger.event.data.action == ack_action }}"
               then:
                 - if:
                     - condition: template

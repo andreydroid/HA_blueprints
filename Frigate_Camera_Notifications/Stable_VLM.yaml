@@ -1241,11 +1241,11 @@ actions:
                           icon: "{{icon_1}}"
                         - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                           title: "{{button_2}}"
-                          uri: "{{url_2}}"
+                          uri: "{{ url_2 if '/' in url_2 else None }}"
                           icon: "{{icon_2}}"
                         - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                           title: "{{button_3}}"
-                          uri: "{{url_3}}"
+                          uri: "{{ url_3 if '/' in url_3 else None }}"
                           icon: "{{icon_3}}"
                           destructive: true
             default:
@@ -1283,11 +1283,11 @@ actions:
                         icon: "{{icon_1}}"
                       - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                         title: "{{button_2}}"
-                        uri: "{{url_2}}"
+                        uri: "{{ url_2 if '/' in url_2 else None }}"
                         icon: "{{icon_2}}"
                       - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                         title: "{{button_3}}"
-                        uri: "{{url_3}}"
+                        uri: "{{ url_3 if '/' in url_3 else None }}"
                         icon: "{{icon_3}}"
                         destructive: true
           # Hand off to the siren-escalation automation (frigate_vlm package) when the
@@ -1304,7 +1304,8 @@ actions:
                   payload: >-
                     {{ {'id': vlm_id, 'camera': camera, 'profile': vlm_siren_profile,
                         'siren_entity': siren_entity, 'title': title, 'message': message,
-                        'ack_action': 'ack-' ~ vlm_id, 'tag': tag} | tojson }}
+                        'ack_action': 'ack-' ~ vlm_id, 'tag': tag,
+                        'clear_service': ('notify.' ~ notify_group_target) if notify_group_target else 'notify.notify'} | tojson }}
       - alias: "Silence New Object Notifications"
         conditions:
           - condition: trigger
@@ -1433,11 +1434,11 @@ actions:
                               icon: "{{icon_1}}"
                             - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                               title: "{{button_2}}"
-                              uri: "{{url_2}}"
+                              uri: "{{ url_2 if '/' in url_2 else None }}"
                               icon: "{{icon_2}}"
                             - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                               title: "{{button_3}}"
-                              uri: "{{url_3}}"
+                              uri: "{{ url_3 if '/' in url_3 else None }}"
                               icon: "{{icon_3}}"
                               destructive: true
                   - conditions: "{{ tv }}"
@@ -1487,11 +1488,11 @@ actions:
                                 icon: "{{icon_1}}"
                               - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                 title: "{{button_2}}"
-                                uri: "{{url_2}}"
+                                uri: "{{ url_2 if '/' in url_2 else None }}"
                                 icon: "{{icon_2}}"
                               - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                 title: "{{button_3}}"
-                                uri: "{{url_3}}"
+                                uri: "{{ url_3 if '/' in url_3 else None }}"
                                 icon: "{{icon_3}}"
                                 destructive: true
                 default:
@@ -1538,11 +1539,11 @@ actions:
                             icon: "{{icon_1}}"
                           - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                             title: "{{button_2}}"
-                            uri: "{{url_2}}"
+                            uri: "{{ url_2 if '/' in url_2 else None }}"
                             icon: "{{icon_2}}"
                           - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                             title: "{{button_3}}"
-                            uri: "{{url_3}}"
+                            uri: "{{ url_3 if '/' in url_3 else None }}"
                             icon: "{{icon_3}}"
                             destructive: true
       - alias: "Frigate Event"
@@ -1798,11 +1799,11 @@ actions:
                                       icon: "{{icon_1}}"
                                     - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                       title: "{{button_2}}"
-                                      uri: "{{url_2}}"
+                                      uri: "{{ url_2 if '/' in url_2 else None }}"
                                       icon: "{{icon_2}}"
                                     - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                       title: "{{button_3}}"
-                                      uri: "{{url_3}}"
+                                      uri: "{{ url_3 if '/' in url_3 else None }}"
                                       icon: "{{icon_3}}"
                                       destructive: true
                           - conditions: "{{ tv }}"
@@ -1854,11 +1855,11 @@ actions:
                                         icon: "{{icon_1}}"
                                       - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                         title: "{{button_2}}"
-                                        uri: "{{url_2}}"
+                                        uri: "{{ url_2 if '/' in url_2 else None }}"
                                         icon: "{{icon_2}}"
                                       - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                         title: "{{button_3}}"
-                                        uri: "{{url_3}}"
+                                        uri: "{{ url_3 if '/' in url_3 else None }}"
                                         icon: "{{icon_3}}"
                                         destructive: true
                         default:
@@ -1907,11 +1908,11 @@ actions:
                                     icon: "{{icon_1}}"
                                   - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                     title: "{{button_2}}"
-                                    uri: "{{url_2}}"
+                                    uri: "{{ url_2 if '/' in url_2 else None }}"
                                     icon: "{{icon_2}}"
                                   - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                     title: "{{button_3}}"
-                                    uri: "{{url_3}}"
+                                    uri: "{{ url_3 if '/' in url_3 else None }}"
                                     icon: "{{icon_3}}"
                                     destructive: true
                       - if: "{{tts and (not tts_helper or not alert_once or (tts_helper and id not in states(tts_helper)))}}"
@@ -2268,11 +2269,11 @@ actions:
                                             icon: "{{icon_1}}"
                                           - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                             title: "{{button_2}}"
-                                            uri: "{{url_2}}"
+                                            uri: "{{ url_2 if '/' in url_2 else None }}"
                                             icon: "{{icon_2}}"
                                           - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                             title: "{{button_3}}"
-                                            uri: "{{url_3}}"
+                                            uri: "{{ url_3 if '/' in url_3 else None }}"
                                             icon: "{{icon_3}}"
                                             destructive: true
                                 - conditions: "{{ tv }}"
@@ -2325,11 +2326,11 @@ actions:
                                               icon: "{{icon_1}}"
                                             - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                               title: "{{button_2}}"
-                                              uri: "{{url_2}}"
+                                              uri: "{{ url_2 if '/' in url_2 else None }}"
                                               icon: "{{icon_2}}"
                                             - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                               title: "{{button_3}}"
-                                              uri: "{{url_3}}"
+                                              uri: "{{ url_3 if '/' in url_3 else None }}"
                                               icon: "{{icon_3}}"
                                               destructive: true
                               default:
@@ -2379,11 +2380,11 @@ actions:
                                           icon: "{{icon_1}}"
                                         - action: "{{ 'URI' if '/' in url_2 else url_2 }}"
                                           title: "{{button_2}}"
-                                          uri: "{{url_2}}"
+                                          uri: "{{ url_2 if '/' in url_2 else None }}"
                                           icon: "{{icon_2}}"
                                         - action: "{{ 'URI' if '/' in url_3 else url_3 }}"
                                           title: "{{button_3}}"
-                                          uri: "{{url_3}}"
+                                          uri: "{{ url_3 if '/' in url_3 else None }}"
                                           icon: "{{icon_3}}"
                                           destructive: true
 
