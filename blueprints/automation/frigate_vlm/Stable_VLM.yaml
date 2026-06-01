@@ -1194,8 +1194,11 @@ actions:
               tv_duration: !input tv_duration
               tv_transparency: !input tv_transparency
               tv_interrupt: !input tv_interrupt
-              attachment: "{{base_url}}/api/frigate{{client_id}}/notifications/{{vlm_id}}/snapshot.jpg"
-              video: "{{base_url}}/api/frigate{{client_id}}/notifications/{{vlm_id}}/{{camera}}/clip.mp4"
+              # Honor the user's Initial Attachment / Video selections. These input
+              # templates reference {{id}}/{{review_id}}/{{camera}}, which the VLM branch
+              # aliases to the object event id above, so they resolve correctly here.
+              attachment: !input attachment
+              video: !input video
           - choose:
               - conditions: "{{ telegram }}"
                 sequence:
