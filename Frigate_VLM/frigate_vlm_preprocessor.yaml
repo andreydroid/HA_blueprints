@@ -1,0 +1,190 @@
+# =============================================================================
+# Frigate VLM Preprocessor  (Home Assistant package)
+# =============================================================================
+# Bridges Frigate per-object GenAI descriptions into clean, camera-routed,
+# type-coerced events for rule-based alerting in the notification blueprint.
+#
+#   frigate/tracked_object_update   (raw, fenced JSON, NO camera, async)
+#         |  strip fences -> parse -> drop if not structured
+#         |  resolve id -> camera/label/zones via Frigate API
+#         |  coerce types ("false" -> false, "3" -> 3)
+#         v
+#   frigate_vlm/events/<camera>     (clean contract, see README)
+#
+# INSTALL  (full step-by-step in Frigate_VLM/README.md)
+#   1) Install Frigate_VLM/frigate-vlm.jinja to
+#      /config/custom_templates/frigate-vlm.jinja  (provides parse_description + vlm_clean_json)
+#   2) Ensure packages are enabled in configuration.yaml:
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   3) Copy this file to /config/packages/frigate_vlm.yaml
+#   4) Restart HA (or reload YAML + restart, packages need a restart)
+#
+#   Not using packages? Put the `rest_command:` block in configuration.yaml
+#   and the `automation:` entry in automations.yaml instead.
+# =============================================================================
+
+rest_command:
+  # tracked_object_update carries only {id, description} - no camera.
+  # /api/events/<id> is the authoritative source for camera/label/zones.
+  #
+  # >>> SET THIS to your Frigate host:port (the unauthenticated internal API,
+  #     usually port 5000). This is a package config value, NOT a blueprint input,
+  #     so it must be edited here. See README "Install".
+  frigate_get_event:
+    url: "http://<FRIGATE_HOST>:5000/api/events/{{ event_id }}"
+    method: GET
+    timeout: 10
+
+automation:
+  - id: frigate_vlm_preprocessor
+    alias: "Frigate VLM Preprocessor"
+    description: >-
+      Normalizes Frigate GenAI object descriptions onto
+      frigate_vlm/events/<camera> for the notification blueprint's VLM rules.
+    mode: queued
+    max: 20
+    triggers:
+      - trigger: mqtt
+        topic: frigate/tracked_object_update
+        value_template: "{{ value_json.type }}"
+        payload: description
+        id: description
+
+    conditions: []
+
+    actions:
+      # ---- 1. Parse the fenced JSON description -------------------------------
+      - variables:
+          event_id: "{{ trigger.payload_json.id }}"
+          vlm: >-
+            {% from 'frigate-vlm.jinja' import parse_description %}{{
+              parse_description(trigger.payload_json.description) | from_json(default={})
+            }}
+
+      # ---- 2. Drop anything that isn't a fully-populated structured payload ---
+      #        (free-text descriptions, malformed JSON, missing gate fields)
+      - condition: template
+        value_template: >-
+          {{ vlm is mapping and vlm.confidence is defined and vlm.image_quality is defined }}
+
+      # ---- 3. Resolve id -> camera/label/zones via Frigate API ---------------
+      - action: rest_command.frigate_get_event
+        data:
+          event_id: "{{ event_id }}"
+        response_variable: ev
+      - condition: template
+        value_template: "{{ ev.status == 200 }}"
+      - variables:
+          event: "{{ ev.content if ev.content is mapping else (ev.content | from_json(default={})) }}"
+      - condition: template
+        value_template: "{{ event.camera is defined }}"
+      - variables:
+          camera: "{{ event.camera }}"
+          label: "{{ event.label | default('') }}"
+          sub_label: "{{ event.sub_label if event.sub_label else none }}"
+          zones: "{{ event.zones | default([]) }}"
+          score: "{{ event.top_score | default(event.score) | default(0) }}"
+
+      # ---- 4. Publish the clean, type-coerced contract message ---------------
+      - action: mqtt.publish
+        data:
+          topic: "frigate_vlm/events/{{ camera }}"
+          qos: 0
+          retain: false
+          payload: >-
+            {% from 'frigate-vlm.jinja' import vlm_clean_json %}{{
+              '{'
+              ~ '"id": ' ~ (event_id | tojson)
+              ~ ', "camera": ' ~ (camera | tojson)
+              ~ ', "label": ' ~ (label | tojson)
+              ~ ', "sub_label": ' ~ (sub_label | tojson)
+              ~ ', "zones": ' ~ (zones | tojson)
+              ~ ', "score": ' ~ (score | tojson)
+              ~ ', "schema_version": ' ~ ((vlm.schema_version | default(0)) | int | tojson)
+              ~ ', "vlm": '
+            }}{% from 'frigate-vlm.jinja' import vlm_clean_json %}{{ vlm_clean_json(vlm) }}}
+  # ===========================================================================
+  # Siren escalation
+  # ===========================================================================
+  # Listens on frigate_vlm/siren/<camera> (published by the blueprint's VLM branch
+  # when a rule sets 'siren': true AND the automation has Enable Siren on). Plays an
+  # escalating series of siren bursts (volume/cadence per profile) until acknowledged
+  # (mobile_app_notification_action: ack-<id>) or until the 5-minute hard cap.
+  #
+  # Reolink RLC-840A/811A: siren ignores durations < 1s and scales smoothly above 1s,
+  # so all bursts are >= 1s; escalation is by VOLUME + CADENCE.
+  #
+  # Each profile is a list of [t, duration_s, volume] steps where t = seconds since
+  # the alert at which that burst plays if still unacknowledged. Lists end at the
+  # 5-minute cap, so the loop is naturally bounded.
+  - id: frigate_vlm_siren
+    alias: "Frigate VLM Siren Escalation"
+    description: >-
+      Escalating, acknowledge-able camera-siren bursts for VLM rules that opt in.
+    mode: parallel
+    max: 10
+    triggers:
+      - trigger: mqtt
+        topic: "frigate_vlm/siren/+"
+        id: siren
+    conditions: []
+    actions:
+      - variables:
+          ev: "{{ trigger.payload_json }}"
+          siren_entity: "{{ ev.siren_entity }}"
+          ack_action: "{{ ev.ack_action }}"
+          clear_service: "{{ ev.clear_service | default('') }}"
+          profile: "{{ ev.profile | default('soft') }}"
+          # [seconds_since_alert, burst_duration_s, volume_level]
+          urgent_steps: >-
+            {{ [[10, 1, 0.2], [20, 1, 0.3]] + [[t, 1, 0.4] for t in range(30, 301, 30)] }}
+          soft_steps: >-
+            {{ [[t, 1, 0.05] for t in range(15, 120, 15)] + [[t, 1, 0.1] for t in range(120, 301, 30)] }}
+          scareoff_steps: >-
+            {{ [[10, 1, 0.4]] + [[t, 2, 0.5] for t in range(20, 301, 30)] }}
+          steps: >-
+            {{ urgent_steps if profile == 'urgent'
+               else scareoff_steps if profile == 'scareoff'
+               else soft_steps }}
+      - alias: "Escalation loop until ack or 5-minute cap"
+        repeat:
+          for_each: "{{ steps }}"
+          sequence:
+            - variables:
+                step_t: "{{ repeat.item[0] | float }}"
+                step_dur: "{{ repeat.item[1] | float }}"
+                step_vol: "{{ repeat.item[2] | float }}"
+                prev_t: "{{ (steps[repeat.index - 2][0] | float) if repeat.index > 1 else 0 }}"
+                wait_gap: "{{ [step_t - prev_t, 0] | max }}"
+            - alias: "Wait for ack (timeout = gap to this burst)"
+              wait_for_trigger:
+                - trigger: event
+                  event_type: mobile_app_notification_action
+                  event_data:
+                    action: "{{ ack_action }}"
+              timeout:
+                seconds: "{{ wait_gap }}"
+              continue_on_timeout: true
+            - alias: "Acknowledged -> clear notification and stop"
+              if:
+                - condition: template
+                  value_template: "{{ wait.trigger is not none }}"
+              then:
+                - if:
+                    - condition: template
+                      value_template: "{{ clear_service }}"
+                  then:
+                    - action: "{{ clear_service }}"
+                      data:
+                        message: clear_notification
+                        data:
+                          tag: "{{ ev.tag }}"
+                - stop: "acknowledged"
+            - alias: "Not acknowledged -> sound one burst"
+              action: siren.turn_on
+              target:
+                entity_id: "{{ siren_entity }}"
+              data:
+                duration: "{{ step_dur }}"
+                volume_level: "{{ step_vol }}"

@@ -1,0 +1,68 @@
+{#
+  Full custom template for Frigate VLM alerting.
+  Install at: /config/custom_templates/frigate-vlm.jinja
+  (replaces your existing file; it keeps your tested macros and adds vlm_clean_json)
+#}
+
+{#
+  Parse a Frigate GenAI description that may or may not be wrapped in markdown code fences.
+  Returns the cleaned JSON string. Use with | from_json filter to get a dict.
+  Example usage in automation:
+    {% from 'frigate-vlm.jinja' import parse_description %}
+    {% set desc = parse_description(trigger.payload_json.description) | from_json %}
+#}
+{% macro parse_description(raw) %}
+{%- if raw -%}
+{{ raw | regex_replace('^```(?:json)?\\s*', '') | regex_replace('\\s*```\\s*$', '') | trim }}
+{%- else -%}
+{}
+{%- endif -%}
+{% endmacro %}
+
+{#
+  Safe getter for fields in a parsed description dict.
+  Returns default if the field is missing or the dict is None.
+  Example: {{ safe_get(desc, 'child_supervised', true) }}
+#}
+{% macro safe_get(d, key, default=none) %}
+{%- if d and key in d -%}
+{{ d[key] }}
+{%- else -%}
+{{ default }}
+{%- endif -%}
+{% endmacro %}
+
+{#
+  Return a JSON string for dict `d` with values coerced to proper types:
+    "true"/"false" (any case)   -> boolean
+    "null"/"none"/"" (any case) -> null
+    pure-integer strings        -> int
+    everything else             -> unchanged
+  Values that are already bool/int/float/list pass through untouched.
+
+  Why this exists: Gemini intermittently returns "false" (a string), which is
+  TRUTHY in Jinja and would fire every boolean rule. Coercing once here means
+  downstream rules can trust real types.
+
+  Example:
+    {% from 'frigate-vlm.jinja' import vlm_clean_json %}
+    {{ vlm_clean_json(parsed_dict) }}
+#}
+{% macro vlm_clean_json(d) %}
+{%- set ns = namespace(parts=[]) -%}
+{%- for k, v in d.items() -%}
+  {%- set val = v -%}
+  {%- if v is string -%}
+    {%- set low = v | lower | trim -%}
+    {%- if low in ['true', 'false'] -%}
+      {%- set val = (low == 'true') -%}
+    {%- elif low in ['null', 'none', ''] -%}
+      {%- set val = none -%}
+    {%- elif low | int(-2147483648) | string == low -%}
+      {%- set val = low | int -%}
+    {%- endif -%}
+  {%- endif -%}
+  {%- set ns.parts = ns.parts + [ (k | tojson) ~ ': ' ~ (val | tojson) ] -%}
+{%- endfor -%}
+{{- '{' ~ ns.parts | join(', ') ~ '}' -}}
+{% endmacro %}
