@@ -10,8 +10,7 @@
   ----------------------------------------------------------------------------
   CONTRACT — every macro receives:
     vlm         dict  — the parsed, TYPE-COERCED VLM output for this event
-                        (fields are WHATEVER YOUR CAMERA PROMPT EMITS — the
-                        names below are illustrative; use your own)
+                        (fields are WHATEVER YOUR CAMERA PROMPT EMITS)
     gate        bool  — true when confidence/image_quality pass the automation's
                         gate thresholds (set in the blueprint UI)
     vlm_zones   list  — Frigate zones the object entered (from the event)
@@ -25,30 +24,44 @@
      'siren': bool          (optional),
      'siren_profile': 'urgent'|'soft'|'scareoff'  (optional)}
 
-  CRITICAL SYNTAX: use {%- -%} trimming so the rendered output starts at '{'
-  with no leading whitespace — Home Assistant only parses it back into a dict
-  when it does. (This is the #1 gotcha.) Access fields with | default(...)
-  everywhere, because the VLM may omit a field.
+  ----------------------------------------------------------------------------
+  v3 PROMPT GRASP these examples assume (see examples/frigate_config.example.yaml):
+    - DESCRIBE-FIRST: the prompt emits `scene_observation` + a `people` array (one object
+      per clearly-visible human: appearance / apparent_age / location / action) BEFORE the
+      booleans, so the model commits to what it sees first.
+    - GROUNDING: `person_present` + `likely_false_detection` separate real humans from noise
+      (shadows, foliage, reflections, animals).
+    - NO IDENTITY: no family/known/unknown person — face/identity recognition is unreliable.
+      Alert on BEHAVIOUR + SAFETY + presence, never on "who".
 
-  DESIGN PATTERNS shown below:
-    1. SECURITY rules first, UNGATED — based on Frigate FACTS (which zone, what
-       time). These must fire even when night IR makes image_quality "poor",
-       so they sit ABOVE the `not gate` check and never depend on `gate`.
-    2. VISION rules after `not gate` — they rely on the VLM actually seeing
-       things clearly, so they require the quality gate.
+  KEY PATTERNS:
+    1. RECONCILIATION — derive `person` = person_present AND not likely_false_detection AND
+       people[] non-empty, then guard EVERY rule on it. A hallucinated boolean can't fire when
+       the model listed nobody. For a LOCATION-specific security rule, also cross-check people[]
+       (e.g. someone actually on the balcony) — this kills "balcony_occupied=true but the scene
+       is empty". Do NOT location-gate CHILD-SAFETY rules (a missed child is worse than a false
+       alarm): guard those on `person` + the flag only.
+    2. SECURITY/SAFETY rules may be UNGATED (fire even if the quality gate fails); VISION rules
+       that need a clear look require `gate`.
     3. First match wins → order by severity (critical → high → normal).
-    4. 'siren' is OPT-IN per rule; 'critical' priority does NOT imply a siren.
-       Sirens only sound if the automation also has "Enable Siren" on.
-    5. "Known person only, nothing else interesting" → return notify:false
-       (intentionally SILENT) so routine family activity doesn't spam you.
+    4. 'siren' is OPT-IN per rule; 'critical' does NOT imply a siren. Sirens only sound if the
+       automation also has "Enable Siren" on.
+    5. Nothing noteworthy / ordinary presence → return notify:false (intentionally SILENT).
+
+  TIME is decided HA-side (the VLM is never asked about it). The night examples below use a
+  hardcoded 23:30–05:30 window via now(); edit to taste.
+
+  CRITICAL SYNTAX: use {%- -%} trimming so the rendered output starts at '{' with no leading
+  whitespace — HA only parses it back into a dict when it does. Access fields with | default(...)
+  everywhere, because the VLM may omit a field.
   ============================================================================
 #}
 
-{#- SMOKE TEST: fire a critical on any detected person. Swap in during
-    commissioning to prove the full pipeline per camera, then replace with a
-    real macro. -#}
+{#- SMOKE TEST: fire a critical on any clearly-real person. Swap in during commissioning to
+    prove the full pipeline per camera, then replace with a real macro. -#}
 {%- macro smoketest_rules(vlm, gate, vlm_zones, camera_name) -%}
-{%- if gate and (vlm.person_detected | default(false)) -%}
+{%- set people = vlm.people | default([]) -%}
+{%- if gate and (vlm.person_present | default(false)) and (people | length > 0) -%}
 {{ {'notify': true, 'priority': 'critical',
     'title': '🧪 SMOKETEST — ' ~ camera_name,
     'message': 'Person detected. ' ~ (vlm.summary | default(''))} }}
@@ -60,41 +73,40 @@
 
 {#- ============================================================
     EXAMPLE A — POOL / HAZARD-AREA CAMERA
-    Demonstrates: zone-fact security rule (ungated), night rule (ungated),
-    gated child-hazard rules with siren opt-in, family-silent default.
+    Ungated child-safety (alerting-biased) + ungated zone/night security, then gated vision,
+    presence-silent default.
     ============================================================ -#}
 {%- macro pool_camera_rules(vlm, gate, vlm_zones, camera_name) -%}
-{#- Fixed-hours night window 22:00–05:59. Edit the hour list to taste, or swap
-    for: is_state('sun.sun', 'below_horizon'). -#}
-{%- set is_night = now().hour in [22, 23, 0, 1, 2, 3, 4, 5] -%}
+{%- set night_min = now().hour * 60 + now().minute -%}
+{%- set is_night = night_min >= 1410 or night_min < 330 -%}
+{%- set people = vlm.people | default([]) -%}
+{%- set person = (vlm.person_present | default(false)) and not (vlm.likely_false_detection | default(false)) and (people | length > 0) -%}
 
-{#- 1) UNGATED security: presence in an off-limits zone, any time/quality. -#}
-{%- if '<restricted_zone>' in vlm_zones -%}
+{#- 1) UNGATED child-safety (most urgent): person + flag only, NO location/quality gate. -#}
+{%- if person and (vlm.child_in_water | default(false)) and not (vlm.child_supervised | default(true)) -%}
 {{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'urgent',
-    'title': '🚨 ' ~ camera_name ~ ' — person in restricted area',
-    'message': vlm.summary | default('Person detected in a restricted area!')} }}
-{#- 2) UNGATED security: any person at night. -#}
-{%- elif is_night -%}
-{{ {'notify': true, 'priority': 'critical',
-    'title': '🚨 ' ~ camera_name ~ ' — person at night',
-    'message': vlm.summary | default('Person detected at night')} }}
-
-{#- 3) GATED vision rules from here down. -#}
-{%- elif not gate -%}
-{{ {'notify': false} }}
-{%- elif (vlm.child_in_water | default(false)) and not (vlm.child_supervised | default(true)) -%}
-{{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'urgent',
-    'title': '🚨 Pool — child unsupervised in water',
+    'title': '🚨 Pool — child alone in water',
     'message': vlm.summary | default('Unsupervised child in the pool!')} }}
-{%- elif (vlm.child_near_edge | default(false)) and not (vlm.child_supervised | default(true)) -%}
+{%- elif person and (vlm.child_near_pool_edge | default(false)) and not (vlm.child_supervised | default(true)) -%}
 {{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'soft',
     'title': '🚨 Pool — child near edge',
     'message': vlm.summary | default('Unsupervised child near the pool edge!')} }}
-{%- elif (vlm.unknown_person_in_frame | default(false)) -%}
+{#- 2) UNGATED security: presence in a restricted Frigate zone is a FACT (no VLM person needed). -#}
+{%- elif '<restricted_zone>' in vlm_zones -%}
+{{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'urgent',
+    'title': '🚨 ' ~ camera_name ~ ' — person in restricted area',
+    'message': vlm.summary | default('Person in a restricted area!')} }}
+{#- 3) UNGATED security: any clearly-real person at night. -#}
+{%- elif person and is_night -%}
+{{ {'notify': true, 'priority': 'critical',
+    'title': '🚨 ' ~ camera_name ~ ' — person at night',
+    'message': vlm.summary | default('Person detected at night')} }}
+{#- 4) GATED vision: suspicious behaviour (needs a clear look). -#}
+{%- elif person and gate and (vlm.suspicious_behavior | default(false)) -%}
 {{ {'notify': true, 'priority': 'high',
-    'title': '⚠️ ' ~ camera_name ~ ' — unknown person',
-    'message': vlm.summary | default('Unknown person detected')} }}
-{#- Known-person-only presence → SILENT. -#}
+    'title': '⚠️ ' ~ camera_name ~ ' — suspicious activity',
+    'message': vlm.suspicious_behavior_details | default(vlm.summary | default('Suspicious activity'))} }}
+{#- Daytime ordinary presence (family/guests) → SILENT. -#}
 {%- else -%}
 {{ {'notify': false} }}
 {%- endif -%}
@@ -103,37 +115,33 @@
 
 {#- ============================================================
     EXAMPLE B — PERIMETER / FRONT CAMERA
-    Demonstrates: severity-ordered gated rules, multi-field OR conditions,
-    category-based delivery, package theft, family-silent default.
-    No sirens here by default (tune to taste).
+    Gated, severity-ordered, reconciled. Conservative gate fields (passable only when an
+    opening is clearly visible). Role-based delivery. Presence-silent default. No sirens here.
     ============================================================ -#}
 {%- macro perimeter_camera_rules(vlm, gate, vlm_zones, camera_name) -%}
-{%- if not gate -%}
-{{ {'notify': false} }}
-{%- elif (vlm.child_unsupervised_near_exit | default(false))
-        and ((vlm.pedestrian_gate_open | default(false)) or (vlm.vehicle_gate_open | default(false))) -%}
+{%- set people = vlm.people | default([]) -%}
+{%- set person = (vlm.person_present | default(false)) and not (vlm.likely_false_detection | default(false)) and (people | length > 0) -%}
+{%- if person and gate and (vlm.child_unsupervised_near_exit | default(false))
+        and (vlm.children_count | default(0)) > 0
+        and ((vlm.pedestrian_perimeter_passable | default(false)) or (vlm.vehicle_perimeter_passable | default(false))) -%}
 {{ {'notify': true, 'priority': 'critical',
-    'title': '🚨 ' ~ camera_name ~ ' — child near open gate',
-    'message': vlm.summary | default('Unsupervised child near an open gate!')} }}
-{%- elif (vlm.suspicious_behavior | default(false))
+    'title': '🚨 ' ~ camera_name ~ ' — child at open gate',
+    'message': vlm.summary | default('A child is near an open gate!')} }}
+{%- elif person and gate and ((vlm.suspicious_behavior | default(false))
         or (vlm.non_standard_approach | default(false))
-        or (vlm.unknown_vehicle_on_property | default(false)) -%}
+        or (vlm.person_observing_property | default(false))) -%}
 {{ {'notify': true, 'priority': 'high',
     'title': '⚠️ ' ~ camera_name ~ ' — suspicious activity',
     'message': vlm.suspicious_behavior_details | default(vlm.summary | default('Suspicious activity outside'))} }}
-{%- elif (vlm.package_being_taken | default(false)) -%}
+{%- elif person and gate and (vlm.package_being_taken | default(false)) -%}
 {{ {'notify': true, 'priority': 'high',
     'title': '📦 ' ~ camera_name ~ ' — package being taken',
     'message': vlm.summary | default('Someone is taking a package')} }}
-{%- elif ((vlm.person_category | default('')) == 'delivery') or (vlm.package_being_delivered | default(false)) -%}
+{%- elif person and gate and (((vlm.person_role | default('')) == 'delivery') or (vlm.package_being_delivered | default(false))) -%}
 {{ {'notify': true, 'priority': 'normal',
     'title': '📦 ' ~ camera_name ~ ' — delivery',
     'message': vlm.summary | default('Delivery')} }}
-{%- elif (vlm.unknown_person_in_frame | default(false)) -%}
-{{ {'notify': true, 'priority': 'high',
-    'title': '⚠️ ' ~ camera_name ~ ' — unknown person',
-    'message': vlm.summary | default('Unknown person outside')} }}
-{#- Known-person-only presence → SILENT. -#}
+{#- Ordinary presence → SILENT (no identity to alert on). -#}
 {%- else -%}
 {{ {'notify': false} }}
 {%- endif -%}
@@ -142,44 +150,38 @@
 
 {#- ============================================================
     EXAMPLE C — ELEVATED / BALCONY CAMERA
-    Demonstrates: stacking several UNGATED safety rules (a child-bedroom
-    balcony must alert regardless of night image quality), with sirens, before
-    falling through to the gated perimeter rules.
+    Demonstrates people[] LOCATION reconciliation for a security rule (someone actually ON the
+    balcony), alongside ungated child-safety rules (no location gate) and gated perimeter rules.
     ============================================================ -#}
 {%- macro balcony_camera_rules(vlm, gate, vlm_zones, camera_name) -%}
-{%- set is_night = now().hour in [22, 23, 0, 1, 2, 3, 4, 5] -%}
+{%- set night_min = now().hour * 60 + now().minute -%}
+{%- set is_night = night_min >= 1410 or night_min < 330 -%}
+{%- set people = vlm.people | default([]) -%}
+{%- set person = (vlm.person_present | default(false)) and not (vlm.likely_false_detection | default(false)) and (people | length > 0) -%}
+{#- LOCATION cross-check: someone actually listed on the balcony (kills "occupied but empty"). -#}
+{%- set on_balcony = (people | selectattr('location', 'equalto', 'balcony') | list | length) > 0 -%}
 
-{#- UNGATED balcony safety (highest priority, fires on poor night IR too). -#}
-{%- if (vlm.child_climbing_railing | default(false)) -%}
+{#- UNGATED child-safety (alerting-biased: person + flag, NO location AND). -#}
+{%- if person and (vlm.child_climbing_balcony | default(false)) -%}
 {{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'urgent',
     'title': '🚨 Balcony — child climbing railing',
     'message': vlm.summary | default('A child is climbing on the balcony railing!')} }}
-{%- elif (vlm.child_on_balcony | default(false)) and not (vlm.adults_count | default(0) > 0) -%}
+{%- elif person and (vlm.child_on_balcony | default(false)) and (vlm.adults_count | default(0)) == 0 -%}
 {{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'soft',
     'title': '🚨 Balcony — child alone',
     'message': vlm.summary | default('A child is alone on the balcony!')} }}
-{%- elif (vlm.unknown_person_on_balcony | default(false)) -%}
-{{ {'notify': true, 'priority': 'critical',
-    'title': '🚨 Balcony — non-family person',
-    'message': vlm.summary | default('A non-family person is on the balcony!')} }}
-{%- elif (vlm.balcony_occupied | default(false)) and is_night -%}
+{#- UNGATED security at night, RECONCILED against people[] location. -#}
+{%- elif person and on_balcony and is_night -%}
 {{ {'notify': true, 'priority': 'critical', 'siren': true, 'siren_profile': 'soft',
     'title': '🚨 Balcony — person at night',
     'message': vlm.summary | default('Person on the balcony at night!')} }}
-
-{#- GATED perimeter rules below (this camera also sees the yard/street). -#}
-{%- elif not gate -%}
-{{ {'notify': false} }}
-{%- elif (vlm.suspicious_behavior | default(false))
-        or (vlm.person_observing_property | default(false)) -%}
+{#- GATED perimeter rules (this camera also sees the yard/street). -#}
+{%- elif person and gate and ((vlm.suspicious_behavior | default(false))
+        or (vlm.person_observing_property | default(false))) -%}
 {{ {'notify': true, 'priority': 'high',
     'title': '⚠️ ' ~ camera_name ~ ' — suspicious activity',
     'message': vlm.suspicious_behavior_details | default(vlm.summary | default('Suspicious activity outside'))} }}
-{%- elif (vlm.unknown_person_in_frame | default(false)) -%}
-{{ {'notify': true, 'priority': 'high',
-    'title': '⚠️ ' ~ camera_name ~ ' — unknown person',
-    'message': vlm.summary | default('Unknown person outside')} }}
-{#- Known-person-only presence → SILENT. -#}
+{#- Ordinary presence → SILENT. -#}
 {%- else -%}
 {{ {'notify': false} }}
 {%- endif -%}

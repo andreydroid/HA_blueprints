@@ -1,0 +1,37 @@
+# =============================================================================
+# Frigate VLM — restart-safe "Silence this camera" state  (Home Assistant package)
+# =============================================================================
+# Per-camera "silenced until" timestamps. When you tap the blueprint's
+# "Silence this camera" action, it writes now()+silence_timer here, and the
+# blueprint's VLM notify gate suppresses alerts while now() < this timestamp.
+#
+# WHY THIS EXISTS
+#   The original silence handler did automation.turn_off -> delay -> turn_on. If
+#   Home Assistant restarted during the delay, the turn_on was lost and the camera
+#   stayed disabled forever. input_datetime persists across restarts and the gate
+#   is purely time-based, so a restart can no longer break silence — and silence
+#   still expires correctly even if HA was down past the expiry.
+#
+# ONE ENTRY PER GENAI CAMERA. The helper name MUST be
+#   input_datetime.vlm_silenced_until_<camera>
+# where <camera> is the Frigate camera name (the camera object_id, i.e. the
+# frigate_vlm/events/<camera> name). Add/rename to match your cameras.
+#
+# Safe-degrade: if a camera's helper is missing, silence simply no-ops for that
+# camera (notifications keep working) — so you only need helpers for cameras where
+# you actually want the silence action.
+#
+# INSTALL: copy to /config/packages/vlm_silence.yaml (packages must be enabled,
+# see docs/README.md) and restart HA so the new helpers are created.
+# =============================================================================
+input_datetime:
+  vlm_silenced_until_example_camera:
+    name: VLM silenced until - example_camera
+    has_date: true
+    has_time: true
+
+  # Add one block per additional genai camera, e.g.:
+  # vlm_silenced_until_backyard:
+  #   name: VLM silenced until - backyard
+  #   has_date: true
+  #   has_time: true

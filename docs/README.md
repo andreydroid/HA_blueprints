@@ -43,13 +43,16 @@ blueprint stays simple and survives Frigate upgrades.
   "sub_label": null,
   "zones": ["<zone_a>", "<zone_b>"],
   "score": 0.77,
-  "schema_version": 1,
+  "schema_version": 3,
   "vlm": {                       // fully type-coerced
-    "schema_version": 1,
+    "schema_version": 3,
+    "scene_observation": "An adult is walking up the driveway toward the door",
+    "people": [{ "appearance": "adult, dark jacket", "apparent_age": "adult",
+                 "location": "driveway", "action": "walking toward the door" }],
+    "person_present": true, "likely_false_detection": false,
     "person_count": 1, "adults_count": 1, "children_count": 0,
-    "known_person_in_frame": true, "unknown_person_in_frame": false,
     "confidence": "high", "image_quality": "good",
-    "summary": "A person is standing in the yard ..."
+    "summary": "Adult walking up the driveway"
   }
 }
 ```
@@ -62,24 +65,35 @@ never hardcode field names; rules reference whatever fields your prompt emits, a
 `schema_version` the prompt emits, so you can evolve the schema without touching the
 pipeline. Below is the **illustrative** field set used by the example rules; adapt freely.
 
-**Core (recommended in every genai camera — the gate + identity basics):**
-`schema_version`, `person_count`, `adults_count`, `children_count`,
-`known_person_in_frame`, `unknown_person_in_frame`,
+**Core (recommended in every genai camera):**
+`schema_version`, `scene_observation`, `people` (array — one object per clearly-visible
+human: `appearance`/`apparent_age`/`location`/`action`), `person_present`,
+`likely_false_detection`, `person_count`, `adults_count`, `children_count`,
 `confidence` (`low|medium|high`), `image_quality` (`poor|fair|good`), `summary`.
 
+> **Describe-first + grounding (recommended).** Have the prompt fill `scene_observation` and
+> `people` FIRST, then the booleans, with `person_count == len(people)`. The rules then
+> *reconcile*: act only when a real person is actually listed (`person_present` and not
+> `likely_false_detection` and `people` non-empty), which suppresses hallucinated flags
+> (e.g. "person on balcony" when the scene is empty). For a location-specific rule, cross-check
+> `people` (e.g. someone actually on the balcony). See the example rules.
+>
+> **No identity.** Face/identity recognition is unreliable — don't ask the model "who".
+> Classify by apparent age and drive alerts off behaviour, safety, and presence.
+>
 > `confidence` and `image_quality` must be named/valued consistently across all cameras —
 > they drive the quality gate. Everything else is yours to define.
 
 **Example pool-camera fields:** `child_supervised`, `child_in_water`, `child_near_pool_edge`.
 
-**Example perimeter/front-camera fields:** `person_category`, `package_being_delivered`,
-`package_being_taken`, `unknown_vehicle_on_property`, `pedestrian_perimeter_passable`,
-`vehicle_perimeter_passable`, `non_standard_approach`, `child_unsupervised_near_exit`,
-`suspicious_behavior`, `suspicious_behavior_details`, `animal_in_frame`.
+**Example perimeter/front-camera fields:** `person_role` (`delivery|service_worker|generic`),
+`package_being_delivered`, `package_being_taken`, `pedestrian_perimeter_passable`,
+`vehicle_perimeter_passable` (conservative — true only when an opening is clearly visible),
+`non_standard_approach`, `child_unsupervised_near_exit`, `suspicious_behavior`,
+`suspicious_behavior_details`, `animal_in_frame`.
 
 **Example elevated/balcony-camera fields:** `balcony_occupied`, `child_on_balcony`,
-`child_climbing_balcony`, `unknown_person_on_balcony`, `loitering_on_street`,
-`person_observing_property`.
+`child_climbing_balcony`, `loitering_on_street`, `person_observing_property`.
 
 ## Files
 
@@ -90,6 +104,7 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
 | `custom_templates/frigate_vlm.jinja` | `/config/custom_templates/frigate_vlm.jinja` | macros: `parse_description`, `safe_get`, `vlm_clean_json` |
 | `custom_templates/frigate_vlm_rules.jinja` *(your private copy — gitignored; start from `examples/`)* | `/config/custom_templates/frigate_vlm_rules.jinja` | your per-camera rule macros |
 | `packages/frigate_vlm.yaml` | `/config/packages/frigate_vlm.yaml` | `rest_command` + preprocessor + siren-escalation automations |
+| `packages/vlm_silence.yaml` | `/config/packages/vlm_silence.yaml` | per-camera `input_datetime` helpers for restart-safe "Silence this camera" |
 | `blueprints/automation/frigate_vlm/Stable_VLM.yaml` | `/config/blueprints/automation/frigate_vlm/Stable_VLM.yaml` | the notification blueprint with the VLM branch |
 | `examples/frigate_vlm_rules.example.jinja` | *(template — copy & adapt to the path above)* | anonymized starter rules |
 | `examples/frigate_config.example.yaml` | *(reference — lives on the **Frigate** host, not HA)* | Frigate-side setup: Coral TPU + GenAI provider + per-camera prompt/zones |
@@ -103,11 +118,15 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
    homeassistant:
      packages: !include_dir_named packages
    ```
-3. **Preprocessor** — copy `packages/frigate_vlm.yaml` to `/config/packages/frigate_vlm.yaml`.
-   **Edit the `rest_command.frigate_get_event` URL** inside it: replace `<FRIGATE_HOST>`
-   with your Frigate host/IP (the unauthenticated internal API, usually port 5000) —
-   e.g. `http://192.168.x.x:5000`. This is a package config value, not a blueprint input,
-   so it must be set here.
+3. **Packages** — copy both into `/config/packages/`:
+   - `packages/frigate_vlm.yaml` (preprocessor + siren). **Edit the
+     `rest_command.frigate_get_event` URL** inside it: replace `<FRIGATE_HOST>` with your
+     Frigate host/IP (the unauthenticated internal API, usually port 5000), e.g.
+     `http://192.168.x.x:5000`. This is a package config value, not a blueprint input.
+   - `packages/vlm_silence.yaml` (restart-safe "Silence this camera"). **Add one
+     `input_datetime` block per genai camera**, named `vlm_silenced_until_<camera>` to match
+     your Frigate camera names. (Missing helper = silence no-ops for that camera; notifications
+     still work.)
 4. **Restart Home Assistant** (packages + custom templates need a restart, not just a reload).
 5. **Verify the preprocessor** — see "Test the preprocessor" below.
 6. **Blueprint** — copy `Stable_VLM.yaml` to
@@ -129,6 +148,16 @@ The repo mirrors your HA `/config` layout — each file copies to the matching `
 > reach your HA URL at tap time (e.g. VPN/Tailscale disconnected), the action silently
 > fails (Android later shows an "unable to send" toast) and the siren won't stop. Ensure
 > the companion app's URL is reachable (VPN connected, or a reachable external URL).
+
+## "Silence this camera" (restart-safe)
+
+The notification action **Silence this camera** pauses that camera's VLM alerts for
+`silence_timer` minutes. Rather than disabling the automation (which breaks if HA restarts
+mid-window — the old handler could leave a camera permanently off), it records a per-camera
+timestamp in `input_datetime.vlm_silenced_until_<camera>` and the VLM notify gate suppresses
+alerts while `now()` is before it. `input_datetime` persists across restarts and the gate is
+purely time-based, so silence survives a restart and still expires correctly even if HA was
+down past the expiry. Requires the helpers in `packages/vlm_silence.yaml` (one per camera).
 
 ## VLM Rules: inline vs file-backed (your choice — no blueprint change)
 
@@ -155,16 +184,17 @@ caller variables, so the scope (`vlm, gate, vlm_zones, camera_name`) is passed e
 1. HA → Settings → Devices & Services → MQTT → Configure → **Listen to a topic**:
    `frigate_vlm/#`
 2. Trigger a `person` event on a genai camera; wait ~10–30s for the description.
-3. Expect one clean message on `frigate_vlm/events/<camera>` with `schema_version: 1`
+3. Expect one clean message on `frigate_vlm/events/<camera>` with `schema_version: 3`
    and booleans as real booleans.
 
 ## Status / roadmap
 
-- [x] Schema v1 standardized across camera prompts
+- [x] Schema v3 — describe-first (`scene_observation` + `people[]`), grounding (`person_present`/`likely_false_detection`), people[] reconciliation, no identity
 - [x] Preprocessor (this folder)
 - [x] Blueprint VLM branch — `blueprints/automation/frigate_vlm/Stable_VLM.yaml` (tailored)
-- [x] Example rules (pool, gate, suspicious, delivery, package theft, balcony, family) — authored as per-camera macros; anonymized template in `examples/frigate_vlm_rules.example.jinja` (real deployment file is gitignored)
+- [x] Example rules (pool, gate, suspicious, delivery, package theft, balcony) with people[] reconciliation — anonymized template in `examples/frigate_vlm_rules.example.jinja` (real deployment file is gitignored)
 - [x] Per-camera baseline-suppression toggle (`vlm_suppress_baseline`)
+- [x] Restart-safe "Silence this camera" (`packages/vlm_silence.yaml` + time-based notify gate)
 - [ ] Production soak (~1 week), then generalize + upstream PR to SgtBatten/HA_blueprints
 
 ## Generalization checklist (execute as the FINAL step, before the upstream PR)

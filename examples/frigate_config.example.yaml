@@ -121,28 +121,47 @@ cameras:
       # they drive the HA quality gate. `schema_version` lets you evolve safely.
       # ---------------------------------------------------------------------
       prompt: |
-        Describe what is happening in this image for a home-security system.
+        You are analysing one snapshot for a home-security system. Reference points in
+        this view: <briefly name the fixed areas, e.g. pool / deck / lawn / gate>.
 
-        Known household members (adapt to your own):
-        - <person_1>: adult, <brief description>
-        - <person_2>: child, <brief description>
+        GROUNDING - read before answering. The motion detector can fire on shadows,
+        moving foliage, reflections/ripples, rain, insects on the lens, and animals.
+        Do NOT treat any of those as a person. Count a person ONLY if you can clearly
+        see a human (body, limbs, head). If you cannot, set person_count to 0 and
+        person_present to false.
 
-        Respond with ONLY a JSON object (no extra text). Use these exact keys:
+        DESCRIBE BEFORE YOU DECIDE - fill "scene_observation" and the "people" array
+        FIRST, then fill every field below so it agrees with what you described.
+        "people" has one object per clearly-visible human; if none, use []. person_count
+        MUST equal the number of entries in "people"; children_count MUST equal those
+        whose apparent_age is "child". If "people" is empty, every person/child boolean
+        below is false. Never report a person, child, or action you did not actually see.
+
+        IDENTITY - do NOT name people or guess whether someone is a resident, family, or a
+        stranger (face/identity recognition is unreliable). Classify only by apparent age
+        (adult vs child). Drive alerts off BEHAVIOUR and SAFETY, not identity.
+
+        Respond with ONLY a JSON object (no extra text). Doubled braces are required
+        (Frigate runs the prompt through str.format()):
         {{
-          "schema_version": 1,
-          "person_count": <integer total people visible>,
+          "schema_version": 3,
+          "scene_observation": "<1-2 sentences: what you LITERALLY see, and what most likely triggered this snapshot (person? animal? shadows/foliage?)>",
+          "people": [
+            {{ "appearance": "<build + clothing/colours>", "apparent_age": "<child|teen|adult|unsure>", "location": "<name the area, e.g. pool_water|pool_edge|lawn|gate|street|unclear>", "action": "<what they are doing>" }}
+          ],
+          "person_present": <true only if the people array is non-empty and a real human is clearly visible>,
+          "likely_false_detection": <true if the trigger is probably NOT a person - shadow, foliage, reflection, animal>,
+          "person_count": <equals the length of the people array; 0 if none>,
           "adults_count": <integer>,
-          "children_count": <integer, age ~12 and under>,
-          "known_person_in_frame": <true|false>,
-          "unknown_person_in_frame": <true|false>,
-          "child_in_water": <true|false>,
-          "child_near_pool_edge": <true|false>,
-          "child_supervised": <true if an adult is within ~5m of any child>,
+          "children_count": <people whose apparent_age is child; 0 if none>,
+          "child_in_water": <true if a child is clearly in the pool water>,
+          "child_near_pool_edge": <true if a child is clearly within ~1m of the pool edge>,
+          "child_supervised": <true if, for any child present, an adult is clearly within ~5m>,
           "suspicious_behavior": <true|false>,
           "suspicious_behavior_details": "<short text or null>",
           "confidence": "<low|medium|high>",
           "image_quality": "<poor|fair|good>",
-          "summary": "<one sentence describing the action>"
+          "summary": "<ONE sentence describing only the notable ACTION; no scenery/objects. If nothing notable, say so briefly.>"
         }}
 
   # ===========================================================================

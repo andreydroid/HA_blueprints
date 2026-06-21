@@ -1158,7 +1158,8 @@ actions:
               gate: "{{ (vlm.confidence in gate_conf) and (vlm.image_quality in gate_iq) }}"
               decision: !input vlm_rules
           - condition: template
-            value_template: "{{ decision is mapping and (decision.notify | default(false)) }}"
+            # also suppress while this camera is silenced (restart-safe, time-based)
+            value_template: "{{ decision is mapping and (decision.notify | default(false)) and (now().timestamp() >= (state_attr('input_datetime.vlm_silenced_until_' ~ camera, 'timestamp') | default(0, true))) }}"
           - variables:
               vlm_priority: "{{ decision.priority | default('normal') }}"
               critical: "{{ vlm_priority in ['critical', 'high'] }}"
@@ -1309,21 +1310,24 @@ actions:
                         'siren_entity': siren_entity, 'title': title, 'message': message,
                         'ack_action': 'ack-' ~ vlm_id, 'tag': tag,
                         'clear_service': ('notify.' ~ notify_group_target) if notify_group_target else 'notify.notify'} | tojson }}
-      - alias: "Silence New Object Notifications"
+      - alias: "Silence New Object Notifications (restart-safe)"
         conditions:
           - condition: trigger
             id: silence
         sequence:
-          - action: automation.turn_off
+          # Restart-safe silence: record a per-camera "silenced until" timestamp
+          # instead of turning the automation off. input_datetime persists across
+          # restarts and the VLM notify gate is purely time-based, so an HA restart
+          # during the window no longer leaves the camera permanently disabled.
+          # Requires the input_datetime helpers in packages/vlm_silence.yaml.
+          - variables:
+              silence_minutes: !input silence_timer
+              silence_cam: "{{ (input_camera | expand | map(attribute='entity_id') | list | first | default('camera.unknown')) | replace('camera.', '') }}"
+          - action: input_datetime.set_datetime
             target:
-              entity_id: "{{ this.entity_id }}"
+              entity_id: "input_datetime.vlm_silenced_until_{{ silence_cam }}"
             data:
-              stop_actions: false
-          - delay:
-              minutes: !input silence_timer
-          - action: automation.turn_on
-            target:
-              entity_id: "{{ this.entity_id }}"
+              datetime: "{{ (now() + timedelta(minutes=(silence_minutes | int(30)))).strftime('%Y-%m-%d %H:%M:%S') }}"
       - alias: "Custom Action Manual"
         conditions:
           - condition: trigger
